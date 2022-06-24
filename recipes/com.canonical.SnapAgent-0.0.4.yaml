@@ -1,0 +1,15 @@
+---
+RecipeFormatVersion: '2020-01-25'
+ComponentName: com.canonical.SnapAgent
+ComponentVersion: '0.0.4'
+ComponentDescription: PoC Snap device agent component
+ComponentPublisher: tonyespy
+ComponentConfiguration:
+  DefaultConfiguration:
+    Message: world
+Manifests:
+  - Platform:
+      os: linux
+    Lifecycle:
+      Run: |
+        {artifacts:path}/list_snaps.sh
