@@ -1,5 +1,13 @@
+"""
+TODO:
+ - break into separate python modules
+ - figure out enrollment
+ - pub/sub on device-specific topics
+
+"""
 import json
 import logging
+import requests_unixsocket
 import sys
 import time
 import traceback
@@ -34,6 +42,24 @@ type PublishResponse struct {
 
 TIMEOUT = 10
 ipc_client = awsiot.greengrasscoreipc.connect()
+def serial_from_response(response):
+    res = []
+    for sub in response.split("\n"):
+        if ':' in sub:
+            res.append(map(str.strip, sub.split(":", 1)))
+    res = dict(res)
+    return res
+
+def store_id_from_response(response):
+    res = []
+    for sub in response.split("\n"):
+        if ':' in sub:
+            res.append(map(str.strip, sub.split(":", 1)))
+    res = dict(res)
+    store_id = res.get('store', "")
+    if store_id == "":
+        store_id = "global"
+    return store_id
 
 """
 // Device holds the details of a device
@@ -53,7 +79,30 @@ type Device struct {
 def device_action(id):
     logging.info("device_action called for id:" + id)
 
-    # TODO: add call to snapd for device info
+    session = requests_unixsocket.Session()
+    rsp = session.get("http+unix://%2Frun%2Fsnapd.socket/v2/assertions/model")
+    if rsp.status_code == 200:
+        # The response is a stream of assertions separated by double newlines.
+        # The X-Ubuntu-Assertions-Count header is set to the number of returned
+        # assertions, 0 or more. If more than one model assertion is returned,
+        # this code uses information from the first.
+        store_id = store_id_from_response(rsp.text)
+    else:
+        logging.error("REST call to snapd /v2/assertions/model failed; status: " + rsp.status_code + "reason: " + rsp.reason)
+
+    logging.info("device_action getting serial assertion")
+    rsp = session.get("http+unix://%2Frun%2Fsnapd.socket/v2/assertions/serial")
+    if rsp.status_code == 200:
+        # The response is a stream of assertions separated by double newlines.
+        # The X-Ubuntu-Assertions-Count header is set to the number of returned
+        # assertions, 0 or more. If more than one model assertion is returned,
+        # this code uses information from the first.
+        serial = serial_from_response(rsp.text)
+        logging.info("device_action got serial assertion")
+    else:
+        logging.error("REST call to snapd /v2/assertions/model failed; status: " + rsp.status_code + "reason: " + rsp.reason)
+
+    logging.info("device_action building response...")
 
     result = { }
     result['orgId'] = "<enroll.Organization.ID>"
@@ -62,11 +111,16 @@ def device_action(id):
     # use the number after the region?
     # arn:aws:iot:us-east-1:084305837490:thing/mything
     result['deviceId'] = "<enroll.ID>"
-    result['brand'] = "brand-id"
-    result['model'] = "model"
-    result['serial'] = "xyzzy"
-    result['store'] = "store-id"
-    result['device-key'] = "device-key"
+    result['brand'] = serial['brand-id']
+    result['model'] = serial['model']
+    result['serial'] = serial['serial']
+    result['store'] = store_id
+    # FIXME: device-key isn't parsed properly because
+    # there's a \n after the header name, and this code
+    # isn't using a formal YAML parser
+    result['device-key'] = serial['device-key']
+    # FIXME: setting version requires a call to snapd's
+    # system-info endpoint, and the requisite json parsing
     result['version'] = "x.y.z"
 
     reply = { }
@@ -174,6 +228,7 @@ class StreamHandler(client.SubscribeToIoTCoreStreamHandler):
             else:
                 logging.error("message action: " + action + " NOT RECOGNIZED!")
 
+            logging.info("on_stream_event: sending reply...")
             reply_json = json.dumps(reply)
             response = PublishToIoTCoreRequest()
             response.topic_name = response_topic
@@ -184,6 +239,7 @@ class StreamHandler(client.SubscribeToIoTCoreStreamHandler):
 
         except:
             traceback.print_exc()
+            logging.error("on_stream_event: exception thrown...")
 
     def on_stream_error(self, error: Exception) -> bool:
         # Handle error.
