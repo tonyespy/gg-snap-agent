@@ -1,4 +1,10 @@
 """
+This is a PoC of a Greengrass v2 snapd device-agent. It supports the same MQTT based
+message format as the reference device-agent:
+
+https://github.com/canonical/iot-agent
+
+--------------------------------------------------------------------------------
 TODO:
  - [device] figure out enrollment (i.e. howto set enroll.ID and enroll.Organization.Id)
  - [list] implement 'config' (i.e. call snapd config endpoint for each snap)
