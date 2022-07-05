@@ -1,8 +1,11 @@
 """
 TODO:
- - break into separate python modules
- - figure out enrollment
- - pub/sub on device-specific topics
+ - [device] figure out enrollment (i.e. howto set enroll.ID and enroll.Organization.Id)
+ - [list] implement 'config' (i.e. call snapd config endpoint for each snap)
+ - [install] implement
+ - [refresh] implement
+ - [*] break into separate python modules
+ - [*] pub/sub on device-specific topics
 
 """
 import json
@@ -61,6 +64,17 @@ def store_id_from_response(response):
         store_id = "global"
     return store_id
 
+def snapd_version_from_response(response):
+    sys_json = json.loads(response)
+    result = sys_json['result']
+    version = result['version']
+    return version
+
+def snaps_from_response(response):
+    snaps_json = json.loads(response)
+    snaps = snaps_json['result']
+    return snaps
+
 """
 // Device holds the details of a device
 type Device struct {
@@ -102,6 +116,14 @@ def device_action(id):
     else:
         logging.error("REST call to snapd /v2/assertions/model failed; status: " + rsp.status_code + "reason: " + rsp.reason)
 
+    version = ""
+    rsp = session.get("http+unix://%2Frun%2Fsnapd.socket/v2/system-info")
+    if rsp.status_code == 200:
+        version = snapd_version_from_response(rsp.text)
+        logging.info("device_action got snapd version:" + version)
+    else:
+        logging.error("REST call to snapd /v2/assertions/system-info failed; status: " + rsp.status_code + "reason: " + rsp.reason)
+
     logging.info("device_action building response...")
 
     result = { }
@@ -119,9 +141,7 @@ def device_action(id):
     # there's a \n after the header name, and this code
     # isn't using a formal YAML parser
     result['device-key'] = serial['device-key']
-    # FIXME: setting version requires a call to snapd's
-    # system-info endpoint, and the requisite json parsing
-    result['version'] = "x.y.z"
+    result['version'] = version
 
     reply = { }
     reply['id'] = id
@@ -148,32 +168,30 @@ type DeviceSnap struct {
 }
 """
 def list_action(id):
-    # TODO: add call to snapd for the actual snap list
-    # For now this function just returns a dummy list
-    snap_list = [dict() for x in range(2)]
-    snap_list[0]['deviceId'] = "device-id"
-    snap_list[0]['name'] = "core20"
-    snap_list[0]['installedSize'] = 2112
-    snap_list[0]['installedDate'] = "2022-06-28"
-    snap_list[0]['status'] = "enabled"
-    snap_list[0]['channel'] = "latest/stable"
-    snap_list[0]['confinement'] = "strict"
-    snap_list[0]['version'] = "1.0.0"
-    snap_list[0]['revision'] = 355
-    snap_list[0]['devmode'] = False
-    snap_list[0]['config'] = ""
+    logging.info("list_action called for id:" + id)
 
-    snap_list[1]['deviceId'] = "device-id"
-    snap_list[1]['name'] = "snapd"
-    snap_list[1]['installedSize'] = 2112
-    snap_list[1]['installedDate'] = "2022-06-28"
-    snap_list[1]['status'] = "enabled"
-    snap_list[1]['channel'] = "latest/stable"
-    snap_list[1]['confinement'] = "strict"
-    snap_list[1]['version'] = "2.56"
-    snap_list[1]['revision'] = 16010
-    snap_list[1]['devmode'] = False
-    snap_list[1]['config'] = ""
+    session = requests_unixsocket.Session()
+    rsp = session.get("http+unix://%2Frun%2Fsnapd.socket/v2/snaps")
+    if rsp.status_code == 200:
+        result = snaps_from_response(rsp.text)
+        num_snaps = len(result)
+        snap_list = [dict() for x in range(num_snaps)]
+        index = 0
+
+        logging.info("list_action NUM_SNAPS:" + str(num_snaps))
+
+        for i in range (0, num_snaps):
+            snap_list[i]['deviceId'] = "<enroll.ID>"
+            snap_list[i]['name'] = result[i]['name']
+            snap_list[i]['installedSize'] = result[i]['installed-size']
+            snap_list[i]['installedDate'] = result[i]['install-date']
+            snap_list[i]['status'] = result[i]['status']
+            snap_list[i]['channel'] = result[i]['channel']
+            snap_list[i]['confinement'] = result[i]['confinement']
+            snap_list[i]['version'] = result[i]['version']
+            snap_list[i]['revision'] = result[i]['revision']
+            snap_list[i]['devmode'] = result[i]['devmode']
+            snap_list[i]['config'] = "not supported"
 
     reply = { }
     reply['id'] = id
