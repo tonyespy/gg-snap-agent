@@ -16,6 +16,7 @@ TODO:
 """
 import json
 import logging
+import os
 import requests_unixsocket
 import sys
 import time
@@ -283,6 +284,14 @@ logging.info("mqtt.py: started")
 action_topic = "mydevices/actions"
 response_topic = "mydevices/responses"
 qos = QOS.AT_MOST_ONCE
+
+snap_common = os.environ['SNAP_COMMON']
+path = snap_common + "/device-agent-component.env"
+logging.info("mqtt.py: writing env to: " + path)
+fd = open(path, "w")
+for k, v in os.environ.items():
+   fd.write(k + "=" + v + "\n")
+fd.close()
 
 request = SubscribeToIoTCoreRequest()
 request.topic_name = action_topic
